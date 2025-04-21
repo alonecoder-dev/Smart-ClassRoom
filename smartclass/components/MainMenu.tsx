@@ -12,11 +12,16 @@ import {
   DialogTrigger,
 } from "./ui/dialog";
 import { Textarea } from "./ui/textarea";
+
 import { use, useEffect, useState } from "react";
 import { Input } from "./ui/input";
 import DatePicker from "react-datepicker";
 import { useUser } from "@clerk/nextjs";
 import Loading from "./Loading";
+import { useStreamVideoClient } from "@stream-io/video-react-sdk";
+import { toast } from "sonner";
+
+
 
 const initialValues = {
   dateTime: new Date(),
@@ -33,8 +38,71 @@ const MainMenu = () => {
     "Schedule" | "Instant" | undefined
   >(undefined);
   
-  if (!user) return router.push("/login");
+   
+    const client = useStreamVideoClient();
 
+    const createMeeting = async () => {
+      if (!user) return router.push("/login");
+      if (!client) return router.push("/");
+
+      try {
+        if (!values.dateTime) {
+          toast("Please select a date and time", {
+            duration: 3000,
+            className: "bg-gray-300 rounded-3xl py-8 px-5 justify-center",
+          });
+          return;
+        }
+
+        const id = crypto.randomUUID();
+        const call = client.call("default", id);
+        if (!call) throw new Error("Failed to create meeting");
+        const startsAt =
+          values.dateTime.toISOString() || new Date(Date.now()).toISOString();
+        const description = values.description || "No Description";
+        await call.getOrCreate({
+          data: {
+            starts_at: startsAt,
+            custom: {
+              description,
+            },
+          },
+        });
+
+        await call.updateCallMembers({
+          update_members: [{ user_id: user.id }],
+        });
+
+        if (meetingState === "Instant") {
+          router.push(`/meeting/${call.id}`);
+          toast("Setting up your meeting", {
+            duration: 3000,
+            className: "!bg-gray-300 !rounded-3xl !py-8 !px-5 !justify-center",
+          });
+        }
+
+        if (meetingState === "Schedule") {
+          router.push("/upcoming");
+          toast(`Your meeting is scheduled at ${values.dateTime}`, {
+            duration: 5000,
+            className: "!bg-gray-300 !rounded-3xl !py-8 !px-5 !justify-center",
+          });
+        }
+      } catch (err: any) {
+        toast(`Failed to create Meeting ${err.message}`, {
+          duration: 3000,
+          className: "!bg-gray-300 !rounded-3xl !py-8 !px-5 !justify-center",
+        });
+      }
+    };
+
+    useEffect(() => {
+      if (meetingState) {
+        createMeeting();
+      }
+    }, [meetingState]);
+
+    if (!client || !user) return <Loading />;
   return (
     <section className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
       <Dialog>
